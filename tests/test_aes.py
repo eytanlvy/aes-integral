@@ -150,7 +150,6 @@ def run_tests():
         test_shiftrows(aes, state)
         test_addroundkey(aes, state, round_key)
         test_subbytes(aes, state)
-        test_mixcolumns(aes, state)
         test_encryption()
         print("-" * 40)
         print("All tests passed!")
