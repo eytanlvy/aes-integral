@@ -7,7 +7,7 @@ class AES:
         self._init_constants()
 
     def _init_constants(self):
-        """Initialise les constantes de l'AES"""
+        """Initialize AES constants"""
         # S-box
         self.sbox = np.array([
         0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
@@ -74,13 +74,13 @@ class AES:
 
     def key_expansion(self, key: bytes, Nk: int) -> List[np.ndarray]:
         """
-        Génère les sous-clés à partir de la clé maître
-        Nk: taille de la clé en mots de 32 bits (4 pour AES-128, 6 pour AES-192, 8 pour AES-256)
+        Generates subkeys from the master key
+        Nk: key size in 32-bit words (4 for AES-128, 6 for AES-192, 8 for AES-256)
         """
-        Nr = Nk + 6  # Nombre de rounds
+        Nr = Nk + 6  # Number of rounds
         W = np.zeros((4 * (Nr + 1), 4), dtype=np.uint8)
         
-        # Copie de la clé maître
+        # Copy master key
         key_array = np.frombuffer(key, dtype=np.uint8).reshape(-1, 4)
         W[:Nk] = key_array
         
@@ -93,18 +93,18 @@ class AES:
                 # SubBytes
                 for j in range(4):
                     temp[j] = self.sbox[temp[j]]
-                # XOR avec Rcon
+                # XOR with Rcon
                 temp ^= self.rcon[i//Nk - 1]
             elif Nk > 6 and i % Nk == 4:
-                # AES-256: SubBytes supplémentaire
+                # AES-256: Additional SubBytes
                 for j in range(4):
                     temp[j] = self.sbox[temp[j]]
                     
             W[i] = W[i-Nk] ^ temp
             
-        # Conversion en matrices 4x4 pour chaque round
+        # Convert to 4x4 matrices for each round
         return [W[i:i+4].T for i in range(0, len(W), 4)]
-    
+
     def AddRoundKey(self, state: np.ndarray, round_key: np.ndarray) -> np.ndarray:
         return state ^ round_key
 
@@ -124,10 +124,10 @@ class AES:
 
     def ShiftRows(self, state: np.ndarray) -> np.ndarray:
         result = np.zeros_like(state)
-        result[0] = state[0]  # Première ligne ne bouge pas
-        result[1] = np.roll(state[1], -1)  # Décalage de 1 vers la gauche
-        result[2] = np.roll(state[2], -2)  # Décalage de 2 vers la gauche
-        result[3] = np.roll(state[3], -3)  # Décalage de 3 vers la gauche
+        result[0] = state[0]  # First row doesn't move
+        result[1] = np.roll(state[1], -1)  # Shift 1 position left
+        result[2] = np.roll(state[2], -2)  # Shift 2 positions left
+        result[3] = np.roll(state[3], -3)  # Shift 3 positions left
         return result
     
     def InvShiftRows(self, state: np.ndarray) -> np.ndarray:
@@ -137,26 +137,25 @@ class AES:
         return result
 
     def gmul(self, a: int, b: int) -> int:
-        """Effectue la multiplication dans GF(2^8) en utilisant le polynôme AES."""
+        """Performs multiplication in GF(2^8) using AES polynomial."""
         p = 0
         for _ in range(8):
-            if b & 1:  # Si le bit LSB de b est 1
+            if b & 1:  # If LSB of b is 1
                 p ^= a
-            high_bit_set = a & 0x80  # Vérifie si le MSB de a est 1
-            a = (a << 1) & 0xFF  # Décale a à gauche (et garde 8 bits)
+            high_bit_set = a & 0x80  # Check if MSB of a is 1
+            a = (a << 1) & 0xFF  # Shift a left (keep 8 bits)
             if high_bit_set:
-                a ^= 0x1B  # Applique le polynôme irréductible AES
-            b >>= 1  # Décale b à droite
+                a ^= 0x1B  # Apply AES irreducible polynomial
+            b >>= 1  # Shift b right
         return p
 
-
     def MixColumns(self, state: np.ndarray) -> np.ndarray:
-        """Applique la transformation MixColumns à une matrice d'état 4x4."""
-        assert state.shape == (4, 4), "L'état doit être une matrice 4x4."
+        """Applies MixColumns transformation to a 4x4 state matrix."""
+        assert state.shape == (4, 4), "State must be a 4x4 matrix."
         result = np.zeros((4, 4), dtype=np.uint8)
 
-        for c in range(4):  # Pour chaque colonne
-            for i in range(4):  # Pour chaque ligne dans la colonne
+        for c in range(4):  # For each column
+            for i in range(4):  # For each row in column
                 result[i, c] = 0
                 for j in range(4):
                     result[i, c] ^= self.gmul(self.mix_columns_matrix[i, j], state[j, c])
@@ -178,17 +177,17 @@ class AES:
         return message + bytes([pad_len] * pad_len)
     
     def unpad(self, padded_data: bytes) -> bytes:
-        """Retire le padding PKCS#7"""
+        """Remove PKCS#7 padding"""
         pad_len = padded_data[-1]
         return padded_data[:-pad_len]
 
     def encrypt(self, message: bytes, key: bytes) -> bytes:
         """
-        Chiffre un message avec AES
-        - message: message à chiffrer
-        - key: clé de 16, 24 ou 32 octets pour AES-128, AES-192 ou AES-256
+        Encrypts a message with AES
+        - message: message to encrypt
+        - key: key of 16, 24, or 32 bytes for AES-128, AES-192, or AES-256
         """
-        # Déterminer la version d'AES selon la taille de la clé
+        # Determine AES version based on key size
         key_size = len(key)
         if key_size == 16:
             Nk = 4  # AES-128
@@ -197,31 +196,31 @@ class AES:
         elif key_size == 32:
             Nk = 8  # AES-256
         else:
-            raise ValueError("Taille de clé invalide. Doit être 16, 24 ou 32 octets.")
+            raise ValueError("Invalid key size. Must be 16, 24, or 32 bytes.")
 
         # Padding
         padded_message = self.pad_message(message)
         
-        # Génération des sous-clés
+        # Generate subkeys
         round_keys = self.key_expansion(key, Nk)
         
-        # Chiffrement par blocs
+        # Block encryption
         ciphertext = b''
         for i in range(0, len(padded_message), 16):
             block = padded_message[i:i+16]
             state = np.frombuffer(block, dtype=np.uint8).reshape(4, 4)
             
-            # Premier AddRoundKey
+            # Initial AddRoundKey
             state = self.AddRoundKey(state, round_keys[0])
             
-            # Rounds principaux
+            # Main rounds
             for j in range(1, len(round_keys) - 1):
                 state = self.SubBytes(state)
                 state = self.ShiftRows(state)
                 state = self.MixColumns(state)
                 state = self.AddRoundKey(state, round_keys[j])
             
-            # Dernier round (sans MixColumns)
+            # Final round (without MixColumns)
             state = self.SubBytes(state)
             state = self.ShiftRows(state)
             state = self.AddRoundKey(state, round_keys[-1])
@@ -231,10 +230,11 @@ class AES:
         return ciphertext
     
     def decrypt(self, ciphertext: bytes, key: bytes) -> bytes:
-        """Déchiffrement AES"""
+        """AES Decryption"""
         if len(ciphertext) % 16 != 0:
-            raise ValueError("Le texte chiffré doit être un multiple de 16 octets")
-        # Déterminer la version d'AES selon la taille de la clé
+            raise ValueError("Ciphertext must be a multiple of 16 bytes")
+            
+        # Determine AES version based on key size
         key_size = len(key)
         if key_size == 16:
             Nk = 4  # AES-128
@@ -243,11 +243,12 @@ class AES:
         elif key_size == 32:
             Nk = 8  # AES-256
         else:
-            raise ValueError("Taille de clé invalide. Doit être 16, 24 ou 32 octets.")
+            raise ValueError("Invalid key size. Must be 16, 24, or 32 bytes.")
+            
         # Key schedule
         round_keys = self.key_expansion(key, Nk)
         
-        # Déchiffrement
+        # Decryption
         plaintext = b''
         for i in range(0, len(ciphertext), 16):
             block = ciphertext[i:i+16]
@@ -267,5 +268,5 @@ class AES:
             
             plaintext += state.tobytes()
             
-        # Retrait du padding
+        # Remove padding
         return self.unpad(plaintext)
