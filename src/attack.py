@@ -51,7 +51,7 @@ def run_four_rounds(aes: AES, state: np.ndarray, round_keys: list[np.ndarray]) -
 
     return state
 
-def find_key(aes: AES, ciphertexts: np.ndarray) -> np.ndarray:
+def find_key(aes: AES, ciphertexts: np.ndarray) -> list:
     """
     Implement the square attack on AES (4 rounds).
 
@@ -60,37 +60,33 @@ def find_key(aes: AES, ciphertexts: np.ndarray) -> np.ndarray:
         ciphertexts: Array of ciphertexts after 4 rounds (256, 4, 4).
 
     Returns:
-        np.ndarray: The recovered round 4 key (4, 4).
+        list: 4x4 list where each element is a list of candidate values for that position
     """
-    key = np.zeros((4, 4), dtype=np.uint8)
+    key_candidates = [[[] for _ in range(4)] for _ in range(4)]
     print("\nStarting key recovery...")
 
     for i in range(4):
-        for j in range(4):
-            print(f"\nRecovering key byte at position ({i},{j})")
-            found = False
+        for j in range(4):            
             for k in range(256):
                 sum = 0
-                if k % 32 == 0:
-                    print(f"Testing value {k}/256...", end='\r')
 
                 for l in range(256):
                     sum ^= aes.inv_sbox[ciphertexts[l, i, j] ^ k]
 
                 if sum == 0:
-                    print(f"\n✓ Found! Key byte at position ({i},{j}): {hex(k)}")
-                    key[i, j] = k
-                    found = True
-                    break
+                    key_candidates[i][j].append(k)
 
-            if not found:
-                print(f"\n✗ No key byte found at position ({i},{j})")
+            if len(key_candidates[i][j]) == 0:
+                print(f"⚠️ Warning: No candidates found for position ({i},{j})")
 
-    print("\nRecovered full key matrix:")
-    for row in key:
-        print("[" + " ".join([f"{byte:02x}" for byte in row]) + "]")
+    print("\nFull candidates matrix:")
+    for i in range(4):
+        print("[")
+        for j in range(4):
+            print(f"  Position ({i},{j}): {key_candidates[i][j]}")
+        print("]")
 
-    return key
+    return key_candidates
 
 def verify_zero_sum_property(ciphertexts):
     """
@@ -122,19 +118,38 @@ def verify_zero_sum_property(ciphertexts):
     else:
         print(f"FAILURE: {len(non_zero_positions)} positions do not verify the property")
     print("=" * 50)
-
-def validate_key_length(key: bytes):
+    
+def verify_candidates(candidates: list, true_key: np.ndarray) -> bool:
     """
-    Validate that the key is exactly 16 bytes long.
-
+    Verify that each byte of the true key appears in the corresponding candidate list.
+    
     Args:
-        key: The provided encryption key.
-
-    Raises:
-        ValueError: If the key is not 16 bytes long.
+        candidates: 4x4 list where each element is a list of candidate values
+        true_key: The actual round key (4x4 numpy array)
+        
+    Returns:
+        bool: True if all true key bytes are among the candidates
     """
-    if len(key) != 16:
-        raise ValueError("The encryption key must be exactly 16 bytes long.")
+    all_valid = True
+    print("\nVerifying candidates against true key:")
+    print("-" * 50)
+    
+    for i in range(4):
+        for j in range(4):
+            true_value = true_key[i,j]
+            if true_value in candidates[i][j]:
+                print(f"Position ({i},{j}): ✅ True value {true_value} is among candidates {candidates[i][j]}")
+            else:
+                print(f"Position ({i},{j}): ❌ True value {true_value} NOT FOUND in candidates {candidates[i][j]}")
+                all_valid = False
+                
+    print("-" * 50)
+    if all_valid:
+        print("✅ All true key bytes were found among the candidates!")
+    else:
+        print("❌ Some true key bytes were missing from the candidates!")
+    
+    return all_valid
 
 def run_attack(key: bytes = b"MySecretKey12345"):
     """
@@ -143,7 +158,8 @@ def run_attack(key: bytes = b"MySecretKey12345"):
     Args:
         key: The encryption key to use. Defaults to b"MySecretKey12345".
     """
-    validate_key_length(key)
+    if len(key) != 16:
+        raise ValueError("The encryption key must be exactly 16 bytes long.")
 
     print("Starting the integral attack on 4-round AES...")
     print("-" * 50)
@@ -165,12 +181,9 @@ def run_attack(key: bytes = b"MySecretKey12345"):
     ciphertexts = np.array(ciphertexts)
 
     # Perform key recovery
-    recovered_key = find_key(aes, ciphertexts)
-    print("\nRecovered Key:")
-    print(recovered_key)
+    candidates = find_key(aes, ciphertexts)
+    verify_candidates(candidates, round_keys[4])
 
-    print("\nExpected Key:")
-    print(round_keys[4])
 
 if __name__ == '__main__':
     import argparse
