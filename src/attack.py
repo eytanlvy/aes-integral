@@ -1,4 +1,5 @@
 import numpy as np
+import itertools
 import sys
 from aes import AES
 
@@ -51,6 +52,36 @@ def run_four_rounds(aes: AES, state: np.ndarray, round_keys: list[np.ndarray]) -
 
     return state
 
+def generate_all_keys(key_candidates: list) -> list[np.ndarray]:
+    """
+    Génère toutes les clés possibles à partir des candidats pour chaque position.
+    
+    Args:
+        key_candidates: Liste 4x4 où chaque élément est une liste des valeurs candidates
+        
+    Returns:
+        list[np.ndarray]: Liste de toutes les clés possibles (matrices 4x4)
+    """
+    # Création d'une liste plate des candidats pour chaque position
+    positions = []
+    for i in range(4):
+        for j in range(4):
+            positions.append(key_candidates[i][j])
+    
+    # Génération de toutes les combinaisons possibles
+    all_combinations = list(itertools.product(*positions))
+    
+    # Conversion de chaque combinaison en matrice 4x4
+    all_keys = []
+    for combination in all_combinations:
+        key = np.zeros((4, 4), dtype=np.uint8)
+        for idx, value in enumerate(combination):
+            i, j = idx // 4, idx % 4
+            key[i, j] = value
+        all_keys.append(key)
+    
+    return all_keys
+
 def find_key(aes: AES, ciphertexts: np.ndarray) -> list:
     """
     Implement the square attack on AES (4 rounds).
@@ -79,14 +110,18 @@ def find_key(aes: AES, ciphertexts: np.ndarray) -> list:
             if len(key_candidates[i][j]) == 0:
                 print(f"⚠️ Warning: No candidates found for position ({i},{j})")
 
-    print("\nFull candidates matrix:")
+    total_combinations = 1
     for i in range(4):
-        print("[")
         for j in range(4):
-            print(f"  Position ({i},{j}): {key_candidates[i][j]}")
-        print("]")
-
-    return key_candidates
+            total_combinations *= len(key_candidates[i][j])
+    
+    print(f"\nNombre total de combinaisons possibles: {total_combinations}")
+    
+    # Génération de toutes les clés possibles
+    all_keys = generate_all_keys(key_candidates)
+    print(f"Nombre de clés générées: {len(all_keys)}")
+    
+    return all_keys
 
 def verify_zero_sum_property(ciphertexts):
     """
@@ -119,37 +154,6 @@ def verify_zero_sum_property(ciphertexts):
         print(f"FAILURE: {len(non_zero_positions)} positions do not verify the property")
     print("=" * 50)
     
-def verify_candidates(candidates: list, true_key: np.ndarray) -> bool:
-    """
-    Verify that each byte of the true key appears in the corresponding candidate list.
-    
-    Args:
-        candidates: 4x4 list where each element is a list of candidate values
-        true_key: The actual round key (4x4 numpy array)
-        
-    Returns:
-        bool: True if all true key bytes are among the candidates
-    """
-    all_valid = True
-    print("\nVerifying candidates against true key:")
-    print("-" * 50)
-    
-    for i in range(4):
-        for j in range(4):
-            true_value = true_key[i,j]
-            if true_value in candidates[i][j]:
-                print(f"Position ({i},{j}): ✅ True value {true_value} is among candidates {candidates[i][j]}")
-            else:
-                print(f"Position ({i},{j}): ❌ True value {true_value} NOT FOUND in candidates {candidates[i][j]}")
-                all_valid = False
-                
-    print("-" * 50)
-    if all_valid:
-        print("✅ All true key bytes were found among the candidates!")
-    else:
-        print("❌ Some true key bytes were missing from the candidates!")
-    
-    return all_valid
 
 def run_attack(key: bytes = b"MySecretKey12345"):
     """
@@ -182,7 +186,20 @@ def run_attack(key: bytes = b"MySecretKey12345"):
 
     # Perform key recovery
     candidates = find_key(aes, ciphertexts)
-    verify_candidates(candidates, round_keys[4])
+    true_key = round_keys[4]
+    found = False
+    for idx, possible_key in enumerate(candidates):
+        if np.array_equal(possible_key, true_key):
+            print(f"\n✅ Clé correcte trouvée à l'index {idx}")
+            print()
+            print(f"Clé trouvée:\n{possible_key}")
+            print()
+            print(f"Clé correcte:\n{true_key}")
+            found = True
+            break
+    
+    if not found:
+        print("\n❌ La clé correcte n'a pas été trouvée parmi les candidates!")
 
 
 if __name__ == '__main__':
