@@ -45,10 +45,10 @@ plaintext = aes.decrypt(ciphertext, key)
 ### Running the Integral Attack
 ```bash
 # Run with default key
-python attack.py
+sage attack.py
 
-# Run with custom key (must be 16 bytes)
-python attack.py --key "YourCustomKey1234"
+# Run with custom key
+sage attack.py --key "YourCustomKey1234"
 ```
 ## Security Note
 This implementation is for educational purposes and should not be used in production environments.
