@@ -1,20 +1,8 @@
 import numpy as np
 import itertools
 import sys
+from typing import List
 from aes import AES
-
-def generate_structure() -> np.ndarray:
-    """
-    Generate an integral attack structure with 256 distinct states.
-    The first byte takes all possible values (A),
-    and the other bytes are constant (C).
-    """
-    structure = []
-    for i in range(256):
-        state = np.full((4, 4), 0x42, dtype=np.uint8)
-        state[0, 0] = i
-        structure.append(state)
-    return np.array(structure)
 
 def run_four_rounds(aes: AES, state: np.ndarray, round_keys: list[np.ndarray]) -> np.ndarray:
     """
@@ -115,101 +103,126 @@ def find_key(aes: AES, ciphertexts: np.ndarray) -> list:
         for j in range(4):
             total_combinations *= len(key_candidates[i][j])
     
-    print(f"\nNombre total de combinaisons possibles: {total_combinations}")
     
     # Génération de toutes les clés possibles
     all_keys = generate_all_keys(key_candidates)
-    print(f"Nombre de clés générées: {len(all_keys)}")
     
     return all_keys
 
-def verify_zero_sum_property(ciphertexts):
+def generate_structure(constant_value: int) -> np.ndarray:
     """
-    Verify the zero-sum property on the ciphertexts.
-
+    Generate an integral attack structure with 256 distinct states.
+    The first byte takes all possible values (A),
+    and the other bytes are constant (C).
+    
     Args:
-        ciphertexts: np.array of shape (n, 4, 4) containing ciphertext states.
+        constant_value: The constant value to use for non-active bytes
+    """
+    structure = []
+    for i in range(256):
+        state = np.full((4, 4), constant_value, dtype=np.uint8)
+        state[0, 0] = i
+        structure.append(state)
+    return np.array(structure)
 
+def find_intersection_of_candidate_keys(key_lists: List[List[np.ndarray]]) -> List[np.ndarray]:
+    """
+    Find the intersection of multiple lists of candidate keys.
+    
+    Args:
+        key_lists: List of lists of candidate keys from different attacks
+        
     Returns:
-        tuple: (success, non_zero_positions)
-            - success: bool indicating if the property is verified everywhere.
-            - non_zero_positions: list of positions (i, j, sum) where the property fails.
+        List of keys that appear in all lists
     """
-    print("\nVerifying the zero-sum property:")
-
-    success = True
-    non_zero_positions = []
-
-    for i in range(4):
-        for j in range(4):
-            total = np.bitwise_xor.reduce(ciphertexts[:, i, j])
-            if total != 0:
-                success = False
-                non_zero_positions.append((i, j, total))
-
-    print("\n" + "=" * 50)
-    if success:
-        print("SUCCESS: The zero-sum property is verified for all bytes!")
-    else:
-        print(f"FAILURE: {len(non_zero_positions)} positions do not verify the property")
-    print("=" * 50)
+    if not key_lists:
+        return []
+        
+    # Convert numpy arrays to tuples for comparison
+    def array_to_tuple(arr):
+        return tuple(map(tuple, arr))
     
+    # Convert first list's arrays to tuples
+    common_keys_tuples = set(array_to_tuple(key) for key in key_lists[0])
+    
+    # Find intersection with remaining lists
+    for key_list in key_lists[1:]:
+        current_keys = set(array_to_tuple(key) for key in key_list)
+        common_keys_tuples = common_keys_tuples.intersection(current_keys)
+    
+    # Convert tuples back to numpy arrays
+    return [np.array(key) for key in common_keys_tuples]
 
-def run_attack(key: bytes = b"MySecretKey12345"):
+def run_attack(aes: AES, constant_values: List[int], round_keys: List[np.ndarray]) -> tuple[np.ndarray, bool]:
     """
-    Execute the integral attack on AES-128 (4 rounds).
-
+    Run multiple attacks with different constant values and find the intersection
+    of candidate keys.
+    
     Args:
-        key: The encryption key to use. Defaults to b"MySecretKey12345".
+        aes: Instance of AES
+        constant_values: List of constant values to use in different attacks
+        round_keys: List of round keys
+        
+    Returns:
+        tuple: (final_key, success) where success is True if the key matches round_keys[4]
     """
-    if len(key) != 16:
-        raise ValueError("The encryption key must be exactly 16 bytes long.")
-
-    print("Starting the integral attack on 4-round AES...")
-    print("-" * 50)
-
-    aes = AES()
-
-    # Generate attack structure
-    structure = generate_structure()
-    print(f"Structure generated with {len(structure)} states")
-
-    # Generate round keys
-    round_keys = aes.key_expansion(key, Nk=4)  # AES-128
-    print(f"Master Key: {key.decode('ascii')}")
-    print(f"\nTotal number of round keys: {len(round_keys)}")
-
-    # Execute four rounds on each state
-    print("\nExecuting 4 rounds on each state...")
-    ciphertexts = [run_four_rounds(aes, state, round_keys) for state in structure]
-    ciphertexts = np.array(ciphertexts)
-
-    # Perform key recovery
-    candidates = find_key(aes, ciphertexts)
     true_key = round_keys[4]
-    found = False
-    for idx, possible_key in enumerate(candidates):
-        if np.array_equal(possible_key, true_key):
-            print(f"\n✅ Clé correcte trouvée à l'index {idx}")
-            print()
-            print(f"Clé trouvée:\n{possible_key}")
-            print()
-            print(f"Clé correcte:\n{true_key}")
-            found = True
-            break
+    all_candidate_lists = []
     
-    if not found:
-        print("\n❌ La clé correcte n'a pas été trouvée parmi les candidates!")
-
+    for idx, constant in enumerate(constant_values, 1):
+        print(f"\nRunning attack #{idx} with constant value 0x{constant:02x}")
+        
+        structure = generate_structure(constant)
+        ciphertexts = [run_four_rounds(aes, state, round_keys) for state in structure]
+        ciphertexts = np.array(ciphertexts)
+        
+        candidates = find_key(aes, ciphertexts)
+        print(f"Found {len(candidates)} candidate keys")
+        
+        all_candidate_lists.append(candidates)
+        common_keys = find_intersection_of_candidate_keys(all_candidate_lists)
+        print(f"Number of keys in common so far: {len(common_keys)}")
+        
+        if len(common_keys) == 1:
+            return common_keys[0], np.array_equal(common_keys[0], true_key)
+        elif len(common_keys) == 0:
+            return None, False
+    
+    return None, False
 
 if __name__ == '__main__':
     import argparse
-
+    
     parser = argparse.ArgumentParser(description="Perform an integral attack on AES-128 (4 rounds).")
-    parser.add_argument("--key", type=str, help="Specify a 16-byte encryption key (optional).", default="MySecretKey12345")
-
+    parser.add_argument("--key", type=str, help="Specify a 16-byte encryption key (optional).", 
+                       default="MySecretKey12345")
     args = parser.parse_args()
+
     try:
-        run_attack(key=args.key.encode('utf-8'))
+        key = args.key.encode('utf-8')
+        if len(key) != 16:
+            raise ValueError("The encryption key must be exactly 16 bytes long.")
+
+        constant_values = [0x42, 0x13, 0x37, 0x55, 0xAA]
+        print("Starting refined integral attack on 4-round AES...")
+        print(f"Using constant values: {', '.join(f'0x{x:02x}' for x in constant_values)}")
+        
+        aes = AES()
+        round_keys = aes.key_expansion(key, Nk=4)
+        final_key, success = run_attack(aes, constant_values, round_keys)
+        
+        if final_key is not None:
+            print("\nKey found!")
+            if success:
+                print("✅ The key is correct!")
+            else:
+                print("❌ The key is incorrect!")
+            print("\nExpected:")
+            print(round_keys[4])
+            print("\nFound:")
+            print(final_key)
+        else:
+            print("\n❌ Attack failed - no key found")
+            
     except ValueError as e:
         print(f"Error: {e}")
